@@ -170,7 +170,7 @@
     const fallback = document.getElementById('fallback');
     const bookmarksBar = document.getElementById('bookmarks-bar');
     let currentUrl = '';
-    let fallbackTimer = null;
+    let fallbackCheckInterval = null;
 
     // ---------- Default + Dynamic Favorites ----------
     const DEFAULT_FAVORITES = [
@@ -235,31 +235,54 @@
 
     renderFavorites();
 
-    // ---------- Browser logic with robust fallback detection ----------
-    frame.addEventListener('load', () => {
-      if (fallbackTimer) clearTimeout(fallbackTimer);
-
-      try {
-        const doc = frame.contentDocument || frame.contentWindow.document;
-        if (doc && doc.body && doc.body.innerHTML.length > 0) {
-          fallback.style.display = 'none';
-          frame.style.display = 'block';
-          currentUrl = frame.contentWindow.location.href;
-          urlBar.value = currentUrl;
+    // ---------- Robust iframe block detection ----------
+    function startFallbackCheck(url) {
+      // Clear any existing check
+      if (fallbackCheckInterval) clearInterval(fallbackCheckInterval);
+      let attempts = 0;
+      const maxAttempts = 10; // 5 seconds total (500ms * 10)
+      fallbackCheckInterval = setInterval(() => {
+        attempts++;
+        try {
+          // Try to access the iframe's document
+          const doc = frame.contentDocument || frame.contentWindow.document;
+          // If we can read the document and it has a body with some content, it's likely loaded fine
+          if (doc && doc.body && doc.body.innerHTML.length > 0) {
+            clearInterval(fallbackCheckInterval);
+            fallbackCheckInterval = null;
+            fallback.style.display = 'none';
+            frame.style.display = 'block';
+            currentUrl = url;
+            urlBar.value = currentUrl;
+            return;
+          }
+        } catch (e) {
+          // SecurityError – the frame is blocked (X-Frame-Options / CSP)
+          clearInterval(fallbackCheckInterval);
+          fallbackCheckInterval = null;
+          fallback.style.display = 'flex';
+          frame.style.display = 'none';
           return;
         }
-      } catch (e) {}
-
-      fallbackTimer = setTimeout(() => {
-        if (frame.src === currentUrl) {
+        // If we've tried many times and still can't confirm a loaded document, treat as blocked
+        if (attempts >= maxAttempts) {
+          clearInterval(fallbackCheckInterval);
+          fallbackCheckInterval = null;
+          // If we haven't caught an error yet, maybe it's an empty page. Show fallback as a precaution.
           fallback.style.display = 'flex';
           frame.style.display = 'none';
         }
-      }, 2000);
+      }, 500);
+    }
+
+    frame.addEventListener('load', () => {
+      // Start the fallback check for the current URL
+      startFallbackCheck(currentUrl);
     });
 
     frame.addEventListener('error', () => {
-      if (fallbackTimer) clearTimeout(fallbackTimer);
+      // Immediate error (network failure)
+      if (fallbackCheckInterval) clearInterval(fallbackCheckInterval);
       fallback.style.display = 'flex';
       frame.style.display = 'none';
     });
@@ -305,6 +328,7 @@
       if (e.key === 'Enter') navigate();
     });
 
+    // Initial page
     loadURL('https://www.google.com');
   </script>
 </body>
