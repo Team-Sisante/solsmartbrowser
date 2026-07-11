@@ -1,10 +1,9 @@
-```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Modern Browser</title>
+  <title>SolSmartBrowser</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -86,11 +85,35 @@
       flex: 1;
       display: flex;
       background: #050510;
+      position: relative;
     }
     iframe {
       width: 100%;
       height: 100%;
       border: none;
+    }
+    .fallback-message {
+      display: none;
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(10,10,10,0.9);
+      color: #e0e0ff;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      text-align: center;
+      padding: 40px;
+    }
+    .fallback-message button {
+      margin-top: 20px;
+      background: #7a7aff;
+      border: none;
+      color: white;
+      padding: 16px 32px;
+      font-size: 24px;
+      border-radius: 12px;
+      cursor: pointer;
     }
   </style>
 </head>
@@ -113,20 +136,51 @@
 
   <div class="browser-view">
     <iframe id="browser-frame" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"></iframe>
+    <div class="fallback-message" id="fallback">
+      <p>This site can't be shown inside the browser.</p>
+      <button onclick="openInNewTab()">Open in new tab</button>
+    </div>
   </div>
 
   <script>
     const frame = document.getElementById('browser-frame');
     const urlBar = document.getElementById('url-bar');
+    const fallback = document.getElementById('fallback');
+    let currentUrl = '';
 
-    frame.src = 'https://www.google.com';
+    // Initial load
+    loadURL('https://www.google.com');
 
+    // Detect iframe load errors due to X-Frame-Options or CSP
     frame.addEventListener('load', () => {
       try {
-        if (frame.contentWindow.location.href) {
-          urlBar.value = frame.contentWindow.location.href;
+        // Check if the iframe actually loaded a document (same-origin can be read)
+        const doc = frame.contentDocument || frame.contentWindow.document;
+        // If the document is accessible and not empty, we're good
+        if (doc && doc.body) {
+          fallback.style.display = 'none';
+          frame.style.display = 'block';
+        } else {
+          // Might be cross-origin, but no error yet – monitor for error events
         }
-      } catch (e) {}
+      } catch (e) {
+        // Cross-origin, we can't inspect. The error event will catch blocked loads.
+      }
+    });
+
+    // Catch iframe loading blocked (X-Frame-Options, CSP)
+    frame.addEventListener('error', (e) => {
+      // The iframe failed to load – show fallback
+      fallback.style.display = 'flex';
+      frame.style.display = 'none';
+    });
+
+    // Also monitor for a message from the iframe (not likely, but safety)
+    window.addEventListener('message', (e) => {
+      if (e.data === 'iframe-blocked') {
+        fallback.style.display = 'flex';
+        frame.style.display = 'none';
+      }
     });
 
     function navigate() {
@@ -143,20 +197,37 @@
     }
 
     function loadURL(url) {
+      currentUrl = url;
       urlBar.value = url;
+      // Hide fallback, show iframe and attempt to load
+      fallback.style.display = 'none';
+      frame.style.display = 'block';
       frame.src = url;
     }
 
     function goBack() {
-      if (frame.contentWindow.history.length > 1) frame.contentWindow.history.back();
+      try {
+        frame.contentWindow.history.back();
+      } catch (e) {}
     }
 
     function goForward() {
-      if (frame.contentWindow.history.length > 1) frame.contentWindow.history.forward();
+      try {
+        frame.contentWindow.history.forward();
+      } catch (e) {}
     }
 
     function reload() {
-      frame.contentWindow.location.reload();
+      try {
+        frame.contentWindow.location.reload();
+      } catch (e) {}
+    }
+
+    // Open the current URL in a new tab (bypassing the iframe)
+    function openInNewTab() {
+      if (currentUrl) {
+        window.open(currentUrl, '_blank');
+      }
     }
 
     urlBar.addEventListener('keydown', (e) => {
@@ -165,5 +236,3 @@
   </script>
 </body>
 </html>
-```
-
