@@ -61,6 +61,18 @@
       transition: background 0.2s;
     }
     .go-btn:hover { background: #5a5aea; }
+    .add-fav-btn {
+      background: #ffb347;
+      color: #1a1a2e;
+      border: none;
+      padding: 12px 20px;
+      border-radius: 24px;
+      font-size: 20px;
+      font-weight: bold;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .add-fav-btn:hover { background: #ff9f1c; }
     .bookmarks {
       background: #12121e;
       padding: 8px 16px;
@@ -69,6 +81,7 @@
       border-bottom: 1px solid #2a2a4a;
       flex-shrink: 0;
       overflow-x: auto;
+      align-items: center;
     }
     .bookmark {
       background: #2a2a4a;
@@ -79,8 +92,18 @@
       white-space: nowrap;
       cursor: pointer;
       transition: background 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
     .bookmark:hover, .bookmark:active { background: #3a3a6a; color: white; }
+    .bookmark .remove-fav {
+      font-size: 14px;
+      color: #ff9999;
+      cursor: pointer;
+      line-height: 1;
+    }
+    .bookmark .remove-fav:hover { color: #ff4444; }
     .browser-view {
       flex: 1;
       display: flex;
@@ -124,14 +147,11 @@
     <button class="nav-btn" onclick="reload()" title="Refresh">⟳</button>
     <input type="text" id="url-bar" placeholder="Enter URL or search..." autofocus>
     <button class="go-btn" onclick="navigate()">Go</button>
+    <button class="add-fav-btn" onclick="addFavorite()">⭐ Add to Favorites</button>
   </div>
 
-  <div class="bookmarks">
-    <span class="bookmark" onclick="loadURL('https://www.google.com')">Google</span>
-    <span class="bookmark" onclick="loadURL('https://www.youtube.com/tv')">YouTube TV</span>
-    <span class="bookmark" onclick="loadURL('https://www.netflix.com')">Netflix</span>
-    <span class="bookmark" onclick="loadURL('https://github.com')">GitHub</span>
-    <span class="bookmark" onclick="loadURL('https://space-explorer-test.netlify.app')">Space Explorer</span>
+  <div class="bookmarks" id="bookmarks-bar">
+    <!-- dynamic bookmarks will be injected here -->
   </div>
 
   <div class="browser-view">
@@ -146,41 +166,75 @@
     const frame = document.getElementById('browser-frame');
     const urlBar = document.getElementById('url-bar');
     const fallback = document.getElementById('fallback');
+    const bookmarksBar = document.getElementById('bookmarks-bar');
     let currentUrl = '';
 
-    // Initial load
+    // ---------- Favorites / Bookmarks (localStorage) ----------
+    let favorites = JSON.parse(localStorage.getItem('solSmartFavorites') || '[]');
+
+    function saveFavorites() {
+      localStorage.setItem('solSmartFavorites', JSON.stringify(favorites));
+    }
+
+    function renderFavorites() {
+      bookmarksBar.innerHTML = '';
+      favorites.forEach((fav, index) => {
+        const span = document.createElement('span');
+        span.className = 'bookmark';
+        span.innerHTML = `<span onclick="loadURL('${fav.url}')">${fav.title}</span> <span class="remove-fav" onclick="removeFavorite(${index}, event)">✕</span>`;
+        bookmarksBar.appendChild(span);
+      });
+    }
+
+    function addFavorite() {
+      const url = currentUrl || urlBar.value.trim();
+      if (!url || url === 'about:blank') return;
+      let title = url;
+      try {
+        // Try to get the page title from the iframe (only works same-origin)
+        const doc = frame.contentDocument || frame.contentWindow.document;
+        if (doc && doc.title) title = doc.title.substring(0, 50);
+      } catch (e) {}
+      // Check if already exists
+      if (favorites.some(fav => fav.url === url)) {
+        alert('Already in favorites!');
+        return;
+      }
+      favorites.push({ url, title });
+      saveFavorites();
+      renderFavorites();
+    }
+
+    function removeFavorite(index, event) {
+      event.stopPropagation(); // prevent triggering the bookmark click
+      favorites.splice(index, 1);
+      saveFavorites();
+      renderFavorites();
+    }
+
+    // Initial render
+    renderFavorites();
+
+    // ---------- Browser logic ----------
     loadURL('https://www.google.com');
 
-    // Detect iframe load errors due to X-Frame-Options or CSP
     frame.addEventListener('load', () => {
       try {
-        // Check if the iframe actually loaded a document (same-origin can be read)
         const doc = frame.contentDocument || frame.contentWindow.document;
-        // If the document is accessible and not empty, we're good
         if (doc && doc.body) {
           fallback.style.display = 'none';
           frame.style.display = 'block';
-        } else {
-          // Might be cross-origin, but no error yet – monitor for error events
+          currentUrl = frame.contentWindow.location.href;
+          urlBar.value = currentUrl;
         }
       } catch (e) {
-        // Cross-origin, we can't inspect. The error event will catch blocked loads.
+        // cross-origin; rely on error event for fallback
       }
     });
 
-    // Catch iframe loading blocked (X-Frame-Options, CSP)
-    frame.addEventListener('error', (e) => {
-      // The iframe failed to load – show fallback
+    frame.addEventListener('error', () => {
       fallback.style.display = 'flex';
       frame.style.display = 'none';
-    });
-
-    // Also monitor for a message from the iframe (not likely, but safety)
-    window.addEventListener('message', (e) => {
-      if (e.data === 'iframe-blocked') {
-        fallback.style.display = 'flex';
-        frame.style.display = 'none';
-      }
     });
 
     function navigate() {
@@ -199,35 +253,25 @@
     function loadURL(url) {
       currentUrl = url;
       urlBar.value = url;
-      // Hide fallback, show iframe and attempt to load
       fallback.style.display = 'none';
       frame.style.display = 'block';
       frame.src = url;
     }
 
     function goBack() {
-      try {
-        frame.contentWindow.history.back();
-      } catch (e) {}
+      try { frame.contentWindow.history.back(); } catch (e) {}
     }
 
     function goForward() {
-      try {
-        frame.contentWindow.history.forward();
-      } catch (e) {}
+      try { frame.contentWindow.history.forward(); } catch (e) {}
     }
 
     function reload() {
-      try {
-        frame.contentWindow.location.reload();
-      } catch (e) {}
+      try { frame.contentWindow.location.reload(); } catch (e) {}
     }
 
-    // Open the current URL in a new tab (bypassing the iframe)
     function openInNewTab() {
-      if (currentUrl) {
-        window.open(currentUrl, '_blank');
-      }
+      if (currentUrl) window.open(currentUrl, '_blank');
     }
 
     urlBar.addEventListener('keydown', (e) => {
