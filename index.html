@@ -93,6 +93,16 @@
       line-height: 1;
     }
     .popout-btn:hover { background: #3a3a6a; }
+    .error-bar {
+      display: none;
+      background: #ffb347;
+      color: #1a1a2e;
+      padding: 8px 16px;
+      font-size: 16px;
+      font-weight: bold;
+      text-align: center;
+      flex-shrink: 0;
+    }
     .bookmarks {
       background: #12121e;
       padding: 8px 16px;
@@ -128,15 +138,25 @@
       flex: 1;
       display: flex;
       background: #050510;
+      position: relative;
     }
     iframe {
       width: 100%;
       height: 100%;
       border: none;
     }
+    .loader {
+      display: none;
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%,-50%);
+      color: white;
+      font-size: 40px;
+    }
   </style>
 </head>
 <body>
+  <div class="error-bar" id="error-bar"></div>
   <div class="toolbar">
     <button class="nav-btn" onclick="goBack()" title="Back">←</button>
     <button class="nav-btn" onclick="goForward()" title="Forward">→</button>
@@ -151,21 +171,23 @@
 
   <div class="browser-view">
     <iframe id="browser-frame" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"></iframe>
+    <div class="loader" id="loader">Loading…</div>
   </div>
 
   <script>
     const frame = document.getElementById('browser-frame');
     const urlBar = document.getElementById('url-bar');
     const bookmarksBar = document.getElementById('bookmarks-bar');
+    const errorBar = document.getElementById('error-bar');
     let currentUrl = '';
 
-    // ---------- Favorites (with defaults) ----------
+    // ---------- Default Favorites (all HTTPS) ----------
     const DEFAULT_FAVORITES = [
       { title: 'Google', url: 'https://www.google.com' },
       { title: 'YouTube TV', url: 'https://www.youtube.com/tv' },
       { title: 'Netflix', url: 'https://www.netflix.com' },
       { title: 'GitHub', url: 'https://github.com' },
-      { title: 'Videoscraper', url: 'http://videoscraper.netlify.app/' }   // ← replaced Space Explorer with your app
+      { title: 'Videoscraper', url: 'https://videoscraper.netlify.app/' }   // use HTTPS!
     ];
 
     let stored = localStorage.getItem('solSmartFavorites');
@@ -173,16 +195,13 @@
     if (!favorites || !Array.isArray(favorites) || favorites.length === 0) {
       favorites = DEFAULT_FAVORITES.slice();
     } else {
-      // Merge missing defaults
       DEFAULT_FAVORITES.forEach(def => {
         if (!favorites.some(fav => fav.url === def.url)) favorites.push(def);
       });
     }
     localStorage.setItem('solSmartFavorites', JSON.stringify(favorites));
 
-    function saveFavorites() {
-      localStorage.setItem('solSmartFavorites', JSON.stringify(favorites));
-    }
+    function saveFavorites() { localStorage.setItem('solSmartFavorites', JSON.stringify(favorites)); }
 
     function renderFavorites() {
       bookmarksBar.innerHTML = '';
@@ -203,7 +222,7 @@
         if (doc && doc.title) title = doc.title.substring(0, 50);
       } catch (e) {}
       if (favorites.some(fav => fav.url === url)) {
-        alert('Already in favorites!');
+        showError('Already in favorites!');
         return;
       }
       favorites.push({ url, title });
@@ -216,6 +235,12 @@
       favorites.splice(index, 1);
       saveFavorites();
       renderFavorites();
+    }
+
+    function showError(msg) {
+      errorBar.textContent = msg;
+      errorBar.style.display = 'block';
+      setTimeout(() => { errorBar.style.display = 'none'; }, 4000);
     }
 
     renderFavorites();
@@ -238,29 +263,38 @@
       currentUrl = url;
       urlBar.value = url;
       frame.src = url;
+      // Simple mixed-content check
+      if (window.location.protocol === 'https:' && url.startsWith('http://')) {
+        showError('Warning: Mixed content – use HTTPS if possible');
+      }
     }
 
     function goBack() {
-      try { frame.contentWindow.history.back(); } catch (e) {}
+      try { frame.contentWindow.history.back(); } catch (e) { showError('Cannot go back'); }
     }
 
     function goForward() {
-      try { frame.contentWindow.history.forward(); } catch (e) {}
+      try { frame.contentWindow.history.forward(); } catch (e) { showError('Cannot go forward'); }
     }
 
     function reload() {
-      try { frame.contentWindow.location.reload(); } catch (e) {}
+      try { frame.contentWindow.location.reload(); } catch (e) { showError('Cannot refresh'); }
     }
 
     function openInNewTab() {
       if (currentUrl) window.open(currentUrl, '_blank');
     }
 
+    // If the iframe fails to load (e.g., blocked by X-Frame-Options), show a hint
+    frame.addEventListener('error', () => {
+      showError('Page blocked by the site – click 🔗 to open in new tab');
+    });
+
     urlBar.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') navigate();
     });
 
-    // Start page
+    // Start with Google
     loadURL('https://www.google.com');
   </script>
 </body>
