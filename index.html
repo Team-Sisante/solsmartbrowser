@@ -62,17 +62,21 @@
     }
     .go-btn:hover { background: #5a5aea; }
     .add-fav-btn {
-      background: #ffb347;
-      color: #1a1a2e;
+      background: #2a2a4a;
       border: none;
-      padding: 12px 20px;
-      border-radius: 24px;
-      font-size: 20px;
-      font-weight: bold;
+      color: #ffb347;
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      font-size: 28px;
       cursor: pointer;
-      white-space: nowrap;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s;
+      line-height: 1;
     }
-    .add-fav-btn:hover { background: #ff9f1c; }
+    .add-fav-btn:hover { background: #3a3a6a; }
     .bookmarks {
       background: #12121e;
       padding: 8px 16px;
@@ -147,12 +151,10 @@
     <button class="nav-btn" onclick="reload()" title="Refresh">⟳</button>
     <input type="text" id="url-bar" placeholder="Enter URL or search..." autofocus>
     <button class="go-btn" onclick="navigate()">Go</button>
-    <button class="add-fav-btn" onclick="addFavorite()">⭐ Add to Favorites</button>
+    <button class="add-fav-btn" onclick="addFavorite()" title="Add to Favorites">★</button>
   </div>
 
-  <div class="bookmarks" id="bookmarks-bar">
-    <!-- dynamic bookmarks will be injected here -->
-  </div>
+  <div class="bookmarks" id="bookmarks-bar"></div>
 
   <div class="browser-view">
     <iframe id="browser-frame" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"></iframe>
@@ -168,9 +170,30 @@
     const fallback = document.getElementById('fallback');
     const bookmarksBar = document.getElementById('bookmarks-bar');
     let currentUrl = '';
+    let fallbackTimer = null;
 
-    // ---------- Favorites / Bookmarks (localStorage) ----------
-    let favorites = JSON.parse(localStorage.getItem('solSmartFavorites') || '[]');
+    // ---------- Default + Dynamic Favorites ----------
+    const DEFAULT_FAVORITES = [
+      { title: 'Google', url: 'https://www.google.com' },
+      { title: 'YouTube TV', url: 'https://www.youtube.com/tv' },
+      { title: 'Netflix', url: 'https://www.netflix.com' },
+      { title: 'GitHub', url: 'https://github.com' },
+      { title: 'Space Explorer', url: 'https://space-explorer-test.netlify.app' }
+    ];
+
+    let stored = localStorage.getItem('solSmartFavorites');
+    let favorites = stored ? JSON.parse(stored) : null;
+    if (!favorites || !Array.isArray(favorites) || favorites.length === 0) {
+      favorites = DEFAULT_FAVORITES.slice();
+      localStorage.setItem('solSmartFavorites', JSON.stringify(favorites));
+    } else {
+      DEFAULT_FAVORITES.forEach(def => {
+        if (!favorites.some(fav => fav.url === def.url)) {
+          favorites.push(def);
+        }
+      });
+      localStorage.setItem('solSmartFavorites', JSON.stringify(favorites));
+    }
 
     function saveFavorites() {
       localStorage.setItem('solSmartFavorites', JSON.stringify(favorites));
@@ -191,11 +214,9 @@
       if (!url || url === 'about:blank') return;
       let title = url;
       try {
-        // Try to get the page title from the iframe (only works same-origin)
         const doc = frame.contentDocument || frame.contentWindow.document;
         if (doc && doc.title) title = doc.title.substring(0, 50);
       } catch (e) {}
-      // Check if already exists
       if (favorites.some(fav => fav.url === url)) {
         alert('Already in favorites!');
         return;
@@ -206,33 +227,39 @@
     }
 
     function removeFavorite(index, event) {
-      event.stopPropagation(); // prevent triggering the bookmark click
+      event.stopPropagation();
       favorites.splice(index, 1);
       saveFavorites();
       renderFavorites();
     }
 
-    // Initial render
     renderFavorites();
 
-    // ---------- Browser logic ----------
-    loadURL('https://www.google.com');
-
+    // ---------- Browser logic with robust fallback detection ----------
     frame.addEventListener('load', () => {
+      if (fallbackTimer) clearTimeout(fallbackTimer);
+
       try {
         const doc = frame.contentDocument || frame.contentWindow.document;
-        if (doc && doc.body) {
+        if (doc && doc.body && doc.body.innerHTML.length > 0) {
           fallback.style.display = 'none';
           frame.style.display = 'block';
           currentUrl = frame.contentWindow.location.href;
           urlBar.value = currentUrl;
+          return;
         }
-      } catch (e) {
-        // cross-origin; rely on error event for fallback
-      }
+      } catch (e) {}
+
+      fallbackTimer = setTimeout(() => {
+        if (frame.src === currentUrl) {
+          fallback.style.display = 'flex';
+          frame.style.display = 'none';
+        }
+      }, 2000);
     });
 
     frame.addEventListener('error', () => {
+      if (fallbackTimer) clearTimeout(fallbackTimer);
       fallback.style.display = 'flex';
       frame.style.display = 'none';
     });
@@ -277,6 +304,8 @@
     urlBar.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') navigate();
     });
+
+    loadURL('https://www.google.com');
   </script>
 </body>
 </html>
